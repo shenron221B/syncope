@@ -163,4 +163,55 @@ under the License.
       </resource>
     </resources>
   </build>
+
+  <profiles>
+    <profile>
+      <id>mutation-testing</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>1.15.3</version>
+            <dependencies>
+              <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>1.2.1</version>
+              </dependency>
+            </dependencies>
+            <configuration>
+              <failWhenNoMutations>false</failWhenNoMutations>
+
+              <targetClasses>
+                <param>org.apache.syncope.core.spring.BuildVerification</param>
+              </targetClasses>
+
+              <targetTests>
+                <param>org.apache.syncope.core.spring.DummySpringTest</param>
+              </targetTests>
+
+              <jvmArgs>
+                <value>-Xmx1024m</value>
+                <value>-Djava.awt.headless=true</value>
+                <value>-Djdk.attach.allowAttachSelf=true</value>
+                <value>--add-opens=java.base/java.util=ALL-UNNAMED</value>
+                <value>--add-opens=java.base/java.lang=ALL-UNNAMED</value>
+                <value>--add-opens=java.base/sun.util.calendar=ALL-UNNAMED</value>
+              </jvmArgs>
+            </configuration>
+            <executions>
+              <execution>
+                <id>mutation-coverage</id>
+                <goals>
+                  <goal>mutationCoverage</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
 </project>

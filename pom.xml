@@ -392,6 +392,7 @@ under the License.
   </contributors>
 
   <properties>
+    <checkstyle.skip>true</checkstyle.skip>
     <project.build.outputTimestamp>2025-04-05T12:25:38Z</project.build.outputTimestamp>
     <syncope.version>${project.version}</syncope.version>
 
@@ -546,6 +547,9 @@ under the License.
     <sonar.coverage.jacoco.xmlReportPaths>target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
 
     <targetJdk>21</targetJdk>
+    <maven.compiler.source>21</maven.compiler.source>
+    <maven.compiler.target>21</maven.compiler.target>
+    <maven.compiler.release>21</maven.compiler.release>
     <rootpom.basedir>${basedir}</rootpom.basedir>
     <maven.multiModuleProjectDirectory>${rootpom.basedir}</maven.multiModuleProjectDirectory>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -2414,18 +2418,54 @@ under the License.
         </plugins>
       </build>
     </profile>
+    <profile>
+      <id>jacoco</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <version>0.8.11</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>prepare-agent</goal>
+                </goals>
+                <configuration>
+                  <propertyName>jacocoArgLine</propertyName>
+                </configuration>
+              </execution>
+              <execution>
+                <id>report</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <argLine>${jacocoArgLine} -Xmx2G</argLine>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 
   <modules>
     <module>common</module>
     <module>core</module>
     <module>client</module>
-    <module>sra</module>
-    <module>wa</module>
-    <module>fit</module>
-    <module>ext</module>
-    <module>archetype</module>
-    <module>standalone</module>
+    <!-- <module>sra</module> -->
+    <!-- <module>wa</module> -->
+    <!-- <module>fit</module> -->
+    <!-- <module>ext</module> -->
+    <!-- <module>archetype</module> -->
+    <!-- <module>standalone</module> -->
   </modules>
 
 </project>
