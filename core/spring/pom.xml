@@ -184,11 +184,11 @@ under the License.
               <failWhenNoMutations>false</failWhenNoMutations>
 
               <targetClasses>
-                <param>org.apache.syncope.core.spring.BuildVerification</param>
+                <param>org.apache.syncope.core.spring.DefaultPasswordRule</param>
               </targetClasses>
 
               <targetTests>
-                <param>org.apache.syncope.core.spring.DummySpringTest</param>
+                <param>org.apache.syncope.core.spring.DefaultPasswordRuleTest</param>
               </targetTests>
 
               <jvmArgs>
