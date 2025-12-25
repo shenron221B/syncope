@@ -138,4 +138,15 @@ class DefaultPasswordRuleTest {
         assertDoesNotThrow(() -> rule.enforce("myuser", "otherpass"));
     }
 
+    // test aggiuntivi (JaCoCo)
+
+    @Test
+    void T12_testSetConf_InternalError_TriggersCatch() {
+        DefaultPasswordRuleConf faultyConf = mock(DefaultPasswordRuleConf.class);
+        org.mockito.Mockito.when(faultyConf.getMinLength())
+                .thenThrow(new RuntimeException("Simulated internal failure"));
+
+        assertThrows(IllegalStateException.class, () -> rule.setConf(faultyConf));
+    }
+
 }
