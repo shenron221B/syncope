@@ -149,4 +149,25 @@ class DefaultPasswordRuleTest {
         assertThrows(IllegalStateException.class, () -> rule.setConf(faultyConf));
     }
 
+    // mutation testing
+
+    @Test
+    void T13_killMutant_VerifyErrorMessage() {
+        conf.setMinLength(15);
+        rule.setConf(conf);
+
+        try {
+            rule.enforce("user", "short");
+            org.junit.jupiter.api.Assertions.fail("Doveva lanciare un'eccezione");
+        } catch (RuntimeException e) {
+            String message = e.getMessage();
+            org.junit.jupiter.api.Assertions.assertNotNull(message);
+            String expectedMessagePart = "Password must be 15 or more characters in length";
+
+            org.junit.jupiter.api.Assertions.assertTrue(message.contains(expectedMessagePart),
+                    "Il messaggio d'errore non corrisponde al formato atteso dal file properties. " +
+                            "Atteso: '" + expectedMessagePart + "', Ricevuto: '" + message + "'");
+        }
+    }
+
 }

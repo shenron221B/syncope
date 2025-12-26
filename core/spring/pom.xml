@@ -45,6 +45,13 @@ under the License.
     </dependency>
 
     <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-launcher</artifactId>
+      <version>1.12.2</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
       <groupId>javax.cache</groupId>
       <artifactId>cache-api</artifactId>
     </dependency>
@@ -180,11 +187,13 @@ under the License.
                 <version>1.2.1</version>
               </dependency>
             </dependencies>
+
             <configuration>
+              <verbose>true</verbose>
               <failWhenNoMutations>false</failWhenNoMutations>
 
               <targetClasses>
-                <param>org.apache.syncope.core.spring.DefaultPasswordRule</param>
+                <param>org.apache.syncope.core.spring.policy.DefaultPasswordRule</param>
               </targetClasses>
 
               <targetTests>
@@ -195,19 +204,17 @@ under the License.
                 <value>-Xmx1024m</value>
                 <value>-Djava.awt.headless=true</value>
                 <value>-Djdk.attach.allowAttachSelf=true</value>
+                <value>-XX:+EnableDynamicAgentLoading</value>
+
                 <value>--add-opens=java.base/java.util=ALL-UNNAMED</value>
                 <value>--add-opens=java.base/java.lang=ALL-UNNAMED</value>
+                <value>--add-opens=java.base/java.lang.reflect=ALL-UNNAMED</value>
+                <value>--add-opens=java.base/java.text=ALL-UNNAMED</value>
+                <value>--add-opens=java.base/java.io=ALL-UNNAMED</value>
                 <value>--add-opens=java.base/sun.util.calendar=ALL-UNNAMED</value>
+                <value>--add-opens=java.desktop/java.awt.font=ALL-UNNAMED</value>
               </jvmArgs>
             </configuration>
-            <executions>
-              <execution>
-                <id>mutation-coverage</id>
-                <goals>
-                  <goal>mutationCoverage</goal>
-                </goals>
-              </execution>
-            </executions>
           </plugin>
         </plugins>
       </build>
