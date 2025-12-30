@@ -1,0 +1,314 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+package org.apache.syncope.core.provisioning.java.utils;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.UUID;
+import org.apache.syncope.common.lib.request.GroupCR;
+import org.apache.syncope.common.lib.request.UserCR;
+import org.apache.syncope.common.lib.to.AnyObjectTO;
+import org.apache.syncope.common.lib.to.GroupTO;
+import org.apache.syncope.common.lib.to.Item;
+import org.apache.syncope.common.lib.to.Mapping;
+import org.apache.syncope.common.lib.to.Provision;
+import org.apache.syncope.common.lib.to.UserTO;
+import org.apache.syncope.common.lib.types.AnyTypeKind;
+import org.apache.syncope.core.persistence.api.Encryptor;
+import org.apache.syncope.core.persistence.api.EncryptorManager;
+import org.apache.syncope.core.persistence.api.dao.ExternalResourceDAO;
+import org.apache.syncope.core.persistence.api.dao.RealmSearchDAO;
+import org.apache.syncope.core.persistence.api.dao.UserDAO;
+import org.apache.syncope.core.persistence.api.entity.AnyUtils;
+import org.apache.syncope.core.persistence.api.entity.AnyUtilsFactory;
+import org.apache.syncope.core.persistence.api.entity.Realm;
+import org.apache.syncope.core.persistence.api.entity.task.InboundTask;
+import org.apache.syncope.core.persistence.api.entity.user.User;
+import org.apache.syncope.core.provisioning.api.MappingManager;
+import org.apache.syncope.core.spring.security.PasswordGenerator;
+import org.identityconnectors.framework.common.objects.AttributeBuilder;
+import org.identityconnectors.framework.common.objects.ConnectorObject;
+import org.identityconnectors.framework.common.objects.ConnectorObjectBuilder;
+import org.identityconnectors.framework.common.objects.Name;
+import org.identityconnectors.framework.common.objects.ObjectClass;
+import org.identityconnectors.framework.common.objects.Uid;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class ConnObjectUtilsTest {
+
+    private ConnObjectUtils connObjectUtils;
+
+    private TemplateUtils templateUtils;
+    private RealmSearchDAO realmSearchDAO;
+    private UserDAO userDAO;
+    private ExternalResourceDAO resourceDAO;
+    private PasswordGenerator passwordGenerator;
+    private MappingManager mappingManager;
+    private AnyUtilsFactory anyUtilsFactory;
+    private EncryptorManager encryptorManager;
+
+    private AnyUtils userUtils;
+    private AnyUtils groupUtils;
+    private AnyUtils anyObjectUtils;
+
+    @BeforeEach
+    void setUp() {
+        templateUtils = mock(TemplateUtils.class);
+        realmSearchDAO = mock(RealmSearchDAO.class);
+        userDAO = mock(UserDAO.class);
+        resourceDAO = mock(ExternalResourceDAO.class);
+        passwordGenerator = mock(PasswordGenerator.class);
+        mappingManager = mock(MappingManager.class);
+        anyUtilsFactory = mock(AnyUtilsFactory.class);
+        encryptorManager = mock(EncryptorManager.class);
+
+        userUtils = mock(AnyUtils.class);
+        groupUtils = mock(AnyUtils.class);
+        anyObjectUtils = mock(AnyUtils.class);
+
+        when(anyUtilsFactory.getInstance(AnyTypeKind.USER)).thenReturn(userUtils);
+        when(anyUtilsFactory.getInstance(AnyTypeKind.GROUP)).thenReturn(groupUtils);
+        when(anyUtilsFactory.getInstance(AnyTypeKind.ANY_OBJECT)).thenReturn(anyObjectUtils);
+        when(userUtils.newAnyCR()).thenReturn(new UserCR());
+        when(userUtils.newAnyTO()).thenReturn(new UserTO());
+        when(groupUtils.newAnyTO()).thenReturn(new GroupTO());
+        when(groupUtils.newAnyCR()).thenReturn(new GroupCR());
+        when(anyObjectUtils.newAnyTO()).thenReturn(new AnyObjectTO());
+
+        connObjectUtils = new ConnObjectUtils(
+                templateUtils,
+                realmSearchDAO,
+                userDAO,
+                resourceDAO,
+                passwordGenerator,
+                mappingManager,
+                anyUtilsFactory,
+                encryptorManager
+        );
+    }
+
+    @Test
+    void T01_getAnyCR_User_WithPassword_BaseCase() {
+        String remotePassword = "Password123!";
+        ConnectorObject connObj = buildConnectorObject("testUser", remotePassword, true);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        when(userUtils.newAnyTO()).thenAnswer(invocation -> {
+            UserTO userTO = new UserTO();
+            userTO.setPassword(remotePassword);
+            return userTO;
+        });
+
+        UserCR result = connObjectUtils.getAnyCR(
+                connObj, task, AnyTypeKind.USER, provision, true
+        );
+
+        assertNotNull(result);
+        assertEquals(remotePassword, result.getPassword());
+        verify(passwordGenerator, never()).generate(any());
+    }
+
+    @Test
+    void T02_getAnyCR_User_NoPassword_GenerateTrue() {
+        ConnectorObject connObj = buildConnectorObject("testUser", null, false);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        String generatedPwd = "GeneratedPassword123!";
+        when(passwordGenerator.generate(any())).thenReturn(generatedPwd);
+
+        UserCR result = connObjectUtils.getAnyCR(
+                connObj, task, AnyTypeKind.USER, provision, true
+        );
+
+        assertNotNull(result);
+        assertEquals(generatedPwd, result.getPassword());
+        verify(passwordGenerator).generate(any());
+    }
+
+    @Test
+    void T03_getAnyCR_User_WithPassword_And_GenerateTrue() {
+        String remotePassword = "ExternalPassword!";
+        ConnectorObject connObj = buildConnectorObject("testUser", remotePassword, true);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.setPassword(remotePassword);
+            return u;
+        });
+
+        UserCR result = connObjectUtils.getAnyCR(
+                connObj, task, AnyTypeKind.USER, provision, true
+        );
+
+        assertEquals(remotePassword, result.getPassword());
+        verify(passwordGenerator, never()).generate(any());
+    }
+
+    @Test
+    void T04_getAnyCR_Group_BaseCase() {
+        ConnectorObject connObj = buildConnectorObject("testGroup", null, false);
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        InboundTask<?> task = mockInboundTask();
+
+        Object result = connObjectUtils.getAnyCR(
+                connObj, task, AnyTypeKind.GROUP, provision, false
+        );
+
+        assertNotNull(result);
+        verify(anyUtilsFactory, times(2)).getInstance(AnyTypeKind.GROUP);
+    }
+
+    @Test
+    void T05_getAnyUR_User_BaseCase() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("userUpdate", null, false);
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setUsername("oldUsername");
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        provision.setAnyType("USER");
+        InboundTask<?> task = mockInboundTask();
+
+        User authUser = mock(User.class);
+        when(userDAO.authFind(key)).thenReturn(authUser);
+
+        Encryptor encryptor = mock(Encryptor.class);
+        when(encryptorManager.getInstance()).thenReturn(encryptor);
+        when(encryptor.verify(any(), any(), any())).thenReturn(true);
+
+        connObjectUtils.getAnyUR(
+                key, connObj, original, task, AnyTypeKind.USER, provision
+        );
+
+        verify(userDAO).authFind(key);
+    }
+
+    @Test
+    void T06_getAnyUR_NullKey_ShouldThrowOrFail() {
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+        UserTO original = new UserTO();
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        provision.setAnyType("USER");
+        InboundTask<?> task = mockInboundTask();
+
+        when(userDAO.authFind(null)).thenThrow(new IllegalArgumentException("Key cannot be null"));
+
+        assertThrows(IllegalArgumentException.class, () ->
+                connObjectUtils.getAnyUR(null, connObj, original, task, AnyTypeKind.USER, provision)
+        );
+    }
+
+    @Test
+    void T07_getAnyUR_InconsistentType_ShouldFail() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("group", null, false);
+
+        UserTO original = new UserTO();
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        provision.setAnyType("GROUP");
+        InboundTask<?> task = mockInboundTask();
+
+        assertThrows(ClassCastException.class, () ->
+                connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.GROUP, provision)
+        );
+    }
+
+    @Test
+    void T08_getAnyUR_Group_BaseCase() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("groupUpdate", null, false);
+
+        GroupTO original = new GroupTO();
+        original.setKey(key);
+        original.setName("oldGroupName");
+
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        provision.setAnyType("GROUP");
+        InboundTask<?> task = mockInboundTask();
+
+        connObjectUtils.getAnyUR(
+                key, connObj, original, task, AnyTypeKind.GROUP, provision
+        );
+        verify(anyUtilsFactory).getInstance(AnyTypeKind.GROUP);
+    }
+
+    @Test
+    void T09_getAnyUR_AnyObject_BaseCase() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("printerUpdate", null, false);
+
+        AnyObjectTO original = new AnyObjectTO();
+        original.setKey(key);
+        original.setName("oldPrinterName");
+
+        Provision provision = buildProvision(AnyTypeKind.ANY_OBJECT);
+        provision.setAnyType("PRINTER");
+        InboundTask<?> task = mockInboundTask();
+
+        connObjectUtils.getAnyUR(
+                key, connObj, original, task, AnyTypeKind.ANY_OBJECT, provision
+        );
+
+        verify(anyUtilsFactory).getInstance(AnyTypeKind.ANY_OBJECT);
+    }
+
+    // metodi di supporto
+
+    private InboundTask<?> mockInboundTask() {
+        InboundTask<?> task = mock(InboundTask.class);
+        Realm realm = mock(Realm.class);
+        when(realm.getFullPath()).thenReturn("/test/realm");
+        when(task.getDestinationRealm()).thenReturn(realm);
+        return task;
+    }
+
+    private ConnectorObject buildConnectorObject(String name, String password, boolean hasPwd) {
+        ConnectorObjectBuilder builder = new ConnectorObjectBuilder();
+        builder.setObjectClass(ObjectClass.ACCOUNT);
+        builder.setUid(new Uid(name));
+        builder.setName(new Name(name));
+        if (hasPwd) {
+            builder.addAttribute(AttributeBuilder.buildPassword(password != null ? password.toCharArray() : new char[0]));
+        }
+        return builder.build();
+    }
+
+    private Provision buildProvision(AnyTypeKind kind) {
+        Provision provision = new Provision();
+        provision.setAnyType(kind.name());
+        Mapping mapping = new Mapping();
+        provision.setMapping(mapping);
+        return provision;
+    }
+
+}
