@@ -22,22 +22,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.apache.syncope.common.lib.request.GroupCR;
 import org.apache.syncope.common.lib.request.UserCR;
 import org.apache.syncope.common.lib.to.AnyObjectTO;
 import org.apache.syncope.common.lib.to.GroupTO;
-import org.apache.syncope.common.lib.to.Item;
 import org.apache.syncope.common.lib.to.Mapping;
 import org.apache.syncope.common.lib.to.Provision;
 import org.apache.syncope.common.lib.to.UserTO;
 import org.apache.syncope.common.lib.types.AnyTypeKind;
+import org.apache.syncope.common.lib.types.CipherAlgorithm; // FIX: Import aggiunto per l'Enum
 import org.apache.syncope.core.persistence.api.Encryptor;
 import org.apache.syncope.core.persistence.api.EncryptorManager;
 import org.apache.syncope.core.persistence.api.dao.ExternalResourceDAO;
@@ -45,7 +43,9 @@ import org.apache.syncope.core.persistence.api.dao.RealmSearchDAO;
 import org.apache.syncope.core.persistence.api.dao.UserDAO;
 import org.apache.syncope.core.persistence.api.entity.AnyUtils;
 import org.apache.syncope.core.persistence.api.entity.AnyUtilsFactory;
+import org.apache.syncope.core.persistence.api.entity.ExternalResource; // FIX: Import corretto (senza .resource)
 import org.apache.syncope.core.persistence.api.entity.Realm;
+import org.apache.syncope.core.persistence.api.entity.policy.PasswordPolicy;
 import org.apache.syncope.core.persistence.api.entity.task.InboundTask;
 import org.apache.syncope.core.persistence.api.entity.user.User;
 import org.apache.syncope.core.provisioning.api.MappingManager;
@@ -309,6 +309,141 @@ class ConnObjectUtilsTest {
         Mapping mapping = new Mapping();
         provision.setMapping(mapping);
         return provision;
+    }
+
+    // test aggiuntivi (JaCoCo)
+
+    @Test
+    void T10_getAnyCR_WithPasswordPolicies() {
+        ConnectorObject connObj = buildConnectorObject("testUser", null, false); // No password
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        String resKey = "resource-test";
+        ExternalResource resource = mock(ExternalResource.class);
+        PasswordPolicy policy1 = mock(PasswordPolicy.class);
+        when(resource.getPasswordPolicy()).thenReturn(policy1);
+
+        doReturn(Optional.of(resource)).when(resourceDAO).findById(resKey);
+
+        Realm realm = mock(Realm.class);
+        when(realm.getFullPath()).thenReturn("/test");
+
+        Realm ancestor = mock(Realm.class);
+        PasswordPolicy policy2 = mock(PasswordPolicy.class);
+        when(ancestor.getPasswordPolicy()).thenReturn(policy2);
+
+        when(realmSearchDAO.findByFullPath(any())).thenReturn(Optional.of(realm));
+        when(realmSearchDAO.findAncestors(realm)).thenReturn(List.of(ancestor));
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.getResources().add(resKey);
+            u.setRealm("/test");
+            return u;
+        });
+
+        connObjectUtils.getAnyCR(connObj, task, AnyTypeKind.USER, provision, true);
+        verify(passwordGenerator).generate(any());
+    }
+
+    @Test
+    void T11_getAnyUR_User_PartialUpdate_And_EncryptorVerify() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("userUpdate", "OldPass", true);
+
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setUsername("originalUser");
+        original.setPassword("OldPass");
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        User authUser = mock(User.class);
+        when(authUser.getCipherAlgorithm()).thenReturn(CipherAlgorithm.SHA1);
+        when(authUser.getPassword()).thenReturn("OldPass");
+        when(userDAO.authFind(key)).thenReturn(authUser);
+
+        Encryptor encryptor = mock(Encryptor.class);
+        when(encryptorManager.getInstance()).thenReturn(encryptor);
+        when(encryptor.verify(any(), any(), any())).thenReturn(true);
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.setUsername(null);
+            u.setPassword("OldPass");
+            return u;
+        });
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+        verify(encryptor).verify(any(), any(), any());
+    }
+
+    @Test
+    void T12_getAnyUR_Group_PartialUpdate() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("group", null, false);
+
+        GroupTO original = new GroupTO();
+        original.setKey(key);
+        original.setName("OriginalName");
+
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        InboundTask<?> task = mockInboundTask();
+
+        when(groupUtils.newAnyTO()).thenAnswer(inv -> {
+            GroupTO g = new GroupTO();
+            g.setName(null);
+            return g;
+        });
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.GROUP, provision);
+        verify(anyUtilsFactory).getInstance(AnyTypeKind.GROUP);
+    }
+
+    @Test
+    void T13_getAnyUR_AnyObject_PartialUpdate() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("printer", null, false);
+
+        AnyObjectTO original = new AnyObjectTO();
+        original.setKey(key);
+        original.setName("OriginalPrinter");
+
+        Provision provision = buildProvision(AnyTypeKind.ANY_OBJECT);
+        provision.setAnyType("PRINTER");
+        InboundTask<?> task = mockInboundTask();
+
+        when(anyObjectUtils.newAnyTO()).thenAnswer(inv -> {
+            AnyObjectTO a = new AnyObjectTO();
+            a.setName(null);
+            return a;
+        });
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.ANY_OBJECT, provision);
+        verify(anyUtilsFactory).getInstance(AnyTypeKind.ANY_OBJECT);
+    }
+
+    @Test
+    void T14_getAnyUR_NoDifferences_ReturnsNull() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setUsername("sameUser");
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+        User authUser = mock(User.class);
+        when(userDAO.authFind(key)).thenReturn(authUser);
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.setUsername("sameUser");
+            return u;
+        });
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
     }
 
 }
