@@ -315,7 +315,7 @@ class ConnObjectUtilsTest {
 
     @Test
     void T10_getAnyCR_WithPasswordPolicies() {
-        ConnectorObject connObj = buildConnectorObject("testUser", null, false); // No password
+        ConnectorObject connObj = buildConnectorObject("testUser", null, false);
         Provision provision = buildProvision(AnyTypeKind.USER);
         InboundTask<?> task = mockInboundTask();
 
@@ -444,6 +444,152 @@ class ConnObjectUtilsTest {
         });
 
         connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+    }
+
+    @Test
+    void T15_getAnyCR_User_NoPassword_GenerateFalse() {
+        ConnectorObject connObj = buildConnectorObject("testUser", null, false);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        connObjectUtils.getAnyCR(connObj, task, AnyTypeKind.USER, provision, false);
+        verify(passwordGenerator, never()).generate(any());
+    }
+
+    @Test
+    void T16_getAnyCR_WithNullAndDuplicatePolicies() {
+        ConnectorObject connObj = buildConnectorObject("userPoly", null, false);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        String resKey = "res-null-policy";
+        ExternalResource resNull = mock(ExternalResource.class);
+        when(resNull.getPasswordPolicy()).thenReturn(null); // Copre riga 207
+        doReturn(Optional.of(resNull)).when(resourceDAO).findById(resKey);
+
+        Realm realm = mock(Realm.class);
+        when(realm.getFullPath()).thenReturn("/test");
+        doReturn(Optional.of(realm)).when(realmSearchDAO).findByFullPath(any());
+
+        Realm anc1 = mock(Realm.class);
+        PasswordPolicy policyA = mock(PasswordPolicy.class);
+        when(anc1.getPasswordPolicy()).thenReturn(policyA);
+
+        Realm anc2 = mock(Realm.class);
+        when(anc2.getPasswordPolicy()).thenReturn(null);
+
+        Realm anc3 = mock(Realm.class);
+        when(anc3.getPasswordPolicy()).thenReturn(policyA);
+
+        when(realmSearchDAO.findAncestors(realm)).thenReturn(List.of(anc1, anc2, anc3));
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.getResources().add(resKey);
+            u.setRealm("/test");
+            return u;
+        });
+
+        connObjectUtils.getAnyCR(connObj, task, AnyTypeKind.USER, provision, true);
+
+        verify(passwordGenerator).generate(any());
+    }
+
+    @Test
+    void T17_getAnyUR_User_EncryptorVerify_False() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", "NewPass", true);
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setPassword("OldPass");
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        User authUser = mock(User.class);
+        when(authUser.getCipherAlgorithm()).thenReturn(CipherAlgorithm.SHA1);
+        when(authUser.getPassword()).thenReturn("OldPass");
+        when(userDAO.authFind(key)).thenReturn(authUser);
+
+        Encryptor encryptor = mock(Encryptor.class);
+        when(encryptorManager.getInstance()).thenReturn(encryptor);
+
+        when(encryptor.verify(any(), any(), any())).thenReturn(false);
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.setPassword("NewPass");
+            return u;
+        });
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+
+        verify(encryptor).verify(any(), any(), any());
+    }
+
+    @Test
+    void T18_getAnyUR_User_MustChangePassword_True() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+        UserTO original = new UserTO();
+        original.setKey(key);
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+        User authUser = mock(User.class);
+        when(userDAO.authFind(key)).thenReturn(authUser);
+
+        when(mappingManager.hasMustChangePassword(provision)).thenReturn(true);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+        verify(mappingManager).hasMustChangePassword(provision);
+    }
+
+    @Test
+    void T19_getAnyUR_Group_Name_Populated() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("groupUpdate", null, false);
+
+        GroupTO original = new GroupTO();
+        original.setKey(key);
+        original.setName("OldGroupName");
+
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        InboundTask<?> task = mockInboundTask();
+
+        when(groupUtils.newAnyTO()).thenAnswer(inv -> {
+            GroupTO g = new GroupTO();
+            g.setName("NewGroupName");
+            return g;
+        });
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.GROUP, provision);
+
+        verify(anyUtilsFactory).getInstance(AnyTypeKind.GROUP);
+    }
+
+    @Test
+    void T20_getAnyUR_AnyObject_Name_Populated() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("printerUpdate", null, false);
+
+        AnyObjectTO original = new AnyObjectTO();
+        original.setKey(key);
+        original.setName("OldPrinterName");
+
+        Provision provision = buildProvision(AnyTypeKind.ANY_OBJECT);
+        provision.setAnyType("PRINTER");
+        InboundTask<?> task = mockInboundTask();
+
+        when(anyObjectUtils.newAnyTO()).thenAnswer(inv -> {
+            AnyObjectTO a = new AnyObjectTO();
+            a.setName("NewPrinterName");
+            return a;
+        });
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.ANY_OBJECT, provision);
+
+        verify(anyUtilsFactory).getInstance(AnyTypeKind.ANY_OBJECT);
     }
 
 }
