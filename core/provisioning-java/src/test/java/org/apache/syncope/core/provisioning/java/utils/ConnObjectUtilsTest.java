@@ -18,17 +18,21 @@
  */
 package org.apache.syncope.core.provisioning.java.utils;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
-
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.apache.syncope.common.lib.request.GroupCR;
-import org.apache.syncope.common.lib.request.UserCR;
+import org.apache.syncope.common.lib.Attr;
+import org.apache.syncope.common.lib.request.UserUR;
+import org.apache.syncope.common.lib.request.GroupUR;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.apache.syncope.common.lib.request.*;
 import org.apache.syncope.common.lib.to.AnyObjectTO;
 import org.apache.syncope.common.lib.to.GroupTO;
 import org.apache.syncope.common.lib.to.Mapping;
@@ -58,6 +62,7 @@ import org.identityconnectors.framework.common.objects.ObjectClass;
 import org.identityconnectors.framework.common.objects.Uid;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class ConnObjectUtilsTest {
 
@@ -590,6 +595,308 @@ class ConnObjectUtilsTest {
         connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.ANY_OBJECT, provision);
 
         verify(anyUtilsFactory).getInstance(AnyTypeKind.ANY_OBJECT);
+    }
+
+    // mutation testing
+
+    @Test
+    void T21_getAnyCR_Filter_NullPolicy() {
+        ConnectorObject connObj = buildConnectorObject("userNullPol", null, false);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        String resKey = "res-Null";
+        ExternalResource resNull = mock(ExternalResource.class);
+        when(resNull.getPasswordPolicy()).thenReturn(null);
+        doReturn(Optional.of(resNull)).when(resourceDAO).findById(resKey);
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.getResources().add(resKey);
+            return u;
+        });
+
+        connObjectUtils.getAnyCR(connObj, task, AnyTypeKind.USER, provision, true);
+
+        ArgumentCaptor<List<PasswordPolicy>> captor = ArgumentCaptor.forClass(List.class);
+        verify(passwordGenerator).generate(captor.capture());
+
+        assertEquals(0, captor.getValue().size(), "Il filtro NULL ha fallito: la lista dovrebbe essere vuota");
+    }
+
+    @Test
+    void T22_getAnyUR_User_Properties_Preserved() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setSecurityQuestion("Q?");
+        original.setMustChangePassword(true);
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+        when(userDAO.authFind(key)).thenReturn(mock(User.class));
+        when(mappingManager.hasMustChangePassword(provision)).thenReturn(false);
+
+        UserTO spyUpdated = spy(new UserTO());
+        when(userUtils.newAnyTO()).thenReturn(spyUpdated);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+
+        verify(spyUpdated).setSecurityQuestion("Q?");
+        verify(spyUpdated).setMustChangePassword(true);
+    }
+
+    @Test
+    void T23_getAnyUR_Group_DynMemberships_Preserved() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("group", null, false);
+
+        GroupTO original = new GroupTO();
+        original.setKey(key);
+        original.setName("Group");
+        original.setUDynMembershipCond("user == 'smart'");
+        original.getADynMembershipConds().put("PRINTER", "model == 'canon'");
+
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        InboundTask<?> task = mockInboundTask();
+
+        GroupTO spyUpdated = spy(new GroupTO());
+        spyUpdated.setName("Group");
+        when(groupUtils.newAnyTO()).thenReturn(spyUpdated);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.GROUP, provision);
+
+        verify(spyUpdated).setUDynMembershipCond("user == 'smart'");
+        assertEquals("model == 'canon'", spyUpdated.getADynMembershipConds().get("PRINTER"),
+                "La mappa deve essere stata popolata tramite putAll");
+    }
+
+    @Test
+    void T24_getAnyUR_User_PasswordReset() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", "Pass", true);
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setPassword("Pass");
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        User authUser = mock(User.class);
+        when(authUser.getPassword()).thenReturn("Pass");
+        when(userDAO.authFind(key)).thenReturn(authUser);
+
+        Encryptor encryptor = mock(Encryptor.class);
+        when(encryptorManager.getInstance()).thenReturn(encryptor);
+        when(encryptor.verify(any(), any(), any())).thenReturn(true);
+
+        UserTO spyUpdated = spy(new UserTO());
+        spyUpdated.setPassword("Pass");
+        when(userUtils.newAnyTO()).thenReturn(spyUpdated);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+
+        verify(spyUpdated).setPassword(null);
+    }
+
+    @Test
+    void T25_getAnyUR_User_RestoreProps() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setSecurityQuestion("Q?");
+        original.setMustChangePassword(true);
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+        when(userDAO.authFind(key)).thenReturn(mock(User.class));
+        when(mappingManager.hasMustChangePassword(provision)).thenReturn(false);
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> new UserTO());
+
+        UserUR result = (UserUR) connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+
+        assertNotNull(result);
+        assertNull(result.getSecurityQuestion(), "SecurityQuestion non deve essere nel patch");
+        assertNull(result.getMustChangePassword(), "MustChangePassword non deve essere nel patch");
+    }
+
+    @Test
+    void T26_getAnyUR_Group_RestoreName() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("group", null, false);
+
+        GroupTO original = new GroupTO();
+        original.setKey(key);
+        original.setName("GroupA");
+
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        InboundTask<?> task = mockInboundTask();
+
+        GroupTO spyUpdated = spy(new GroupTO());
+        spyUpdated.setName(null);
+        when(groupUtils.newAnyTO()).thenReturn(spyUpdated);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.GROUP, provision);
+
+        verify(spyUpdated).setName("GroupA");
+    }
+
+    @Test
+    void T27_getAnyUR_Group_RestoreOwners() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("group", null, false);
+
+        GroupTO original = new GroupTO();
+        original.setKey(key);
+        original.setName("G");
+        original.setUserOwner("U");
+        original.setGroupOwner("G2");
+
+        Provision provision = buildProvision(AnyTypeKind.GROUP);
+        InboundTask<?> task = mockInboundTask();
+
+        GroupTO spyUpdated = spy(new GroupTO());
+        spyUpdated.setName("G");
+        when(groupUtils.newAnyTO()).thenReturn(spyUpdated);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.GROUP, provision);
+
+        verify(spyUpdated).setUserOwner("U");
+        verify(spyUpdated).setGroupOwner("G2");
+    }
+
+    @Test
+    void T28_getAnyUR_AnyObject_RestoreName() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("any", null, false);
+
+        AnyObjectTO original = new AnyObjectTO();
+        original.setKey(key);
+        original.setName("PrinterA");
+
+        Provision provision = buildProvision(AnyTypeKind.ANY_OBJECT);
+        provision.setAnyType("PRINTER");
+        InboundTask<?> task = mockInboundTask();
+
+        AnyObjectTO spyUpdated = spy(new AnyObjectTO());
+        spyUpdated.setName(null);
+        when(anyObjectUtils.newAnyTO()).thenReturn(spyUpdated);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.ANY_OBJECT, provision);
+
+        verify(spyUpdated).setName("PrinterA");
+    }
+
+    @Test
+    void T29_getAnyUR_CleanEmptyAttrs() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.getPlainAttrs().add(new Attr.Builder("badge").value("123").build());
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+        when(userDAO.authFind(key)).thenReturn(mock(User.class));
+
+        UserTO tempUser = new UserTO();
+        tempUser.getPlainAttrs().add(new Attr.Builder("badge").build());
+
+        UserTO spyUpdated = spy(tempUser);
+        when(userUtils.newAnyTO()).thenReturn(spyUpdated);
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+
+        verify(spyUpdated, times(2)).getPlainAttrs();
+    }
+
+    @Test
+    void T30_getAnyUR_RealmReset() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setRealm("/old");
+
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+        when(userDAO.authFind(key)).thenReturn(mock(User.class));
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.setRealm("/new");
+            return u;
+        });
+
+        UserUR result = (UserUR) connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+
+        assertNotNull(result);
+        assertNull(result.getRealm(), "Il realm deve essere forzato a null nel patch");
+    }
+
+    @Test
+    void T31_getAnyCR_Policy_Aggregation() {
+        ConnectorObject connObj = buildConnectorObject("userPol", null, false);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        String resKey = "res-1";
+        ExternalResource resource = mock(ExternalResource.class);
+        PasswordPolicy policyRes = mock(PasswordPolicy.class);
+        when(resource.getPasswordPolicy()).thenReturn(policyRes);
+        doReturn(Optional.of(resource)).when(resourceDAO).findById(resKey);
+
+        Realm realm = mock(Realm.class);
+        when(realm.getFullPath()).thenReturn("/test");
+        doReturn(Optional.of(realm)).when(realmSearchDAO).findByFullPath(any());
+
+        Realm ancestor = mock(Realm.class);
+        PasswordPolicy policyAnc = mock(PasswordPolicy.class);
+        when(ancestor.getPasswordPolicy()).thenReturn(policyAnc);
+        when(realmSearchDAO.findAncestors(realm)).thenReturn(List.of(ancestor));
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.getResources().add(resKey);
+            u.setRealm("/test");
+            return u;
+        });
+
+        connObjectUtils.getAnyCR(connObj, task, AnyTypeKind.USER, provision, true);
+
+        ArgumentCaptor<List<PasswordPolicy>> captor = ArgumentCaptor.forClass(List.class);
+        verify(passwordGenerator).generate(captor.capture());
+        List<PasswordPolicy> policies = captor.getValue();
+
+        assertEquals(2, policies.size(), "Deve contenere sia la policy risorsa che quella ancestor");
+        assertTrue(policies.contains(policyRes));
+        assertTrue(policies.contains(policyAnc));
+    }
+
+    @Test
+    void T32_getAnyUR_User_RestoreUsername_Spy() {
+        String key = UUID.randomUUID().toString();
+        ConnectorObject connObj = buildConnectorObject("user", null, false);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        UserTO original = new UserTO();
+        original.setKey(key);
+        original.setUsername("OriginalName");
+
+        when(userDAO.authFind(key)).thenReturn(mock(User.class));
+
+        UserTO spyUpdated = spy(new UserTO());
+        spyUpdated.setUsername(null);
+        when(userUtils.newAnyTO()).thenReturn(spyUpdated);
+
+        connObjectUtils.getAnyUR(key, connObj, original, task, AnyTypeKind.USER, provision);
+
+        verify(spyUpdated).setUsername("OriginalName");
     }
 
 }

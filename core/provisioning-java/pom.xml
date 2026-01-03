@@ -228,25 +228,26 @@ under the License.
             </dependencies>
             <configuration>
               <verbose>true</verbose>
-              <failWhenNoMutations>false</failWhenNoMutations>
-
               <targetClasses>
                 <param>org.apache.syncope.core.provisioning.java.utils.ConnObjectUtils</param>
               </targetClasses>
-
               <targetTests>
                 <param>org.apache.syncope.core.provisioning.java.utils.ConnObjectUtilsTest</param>
               </targetTests>
-
               <jvmArgs>
-                <value>-Xmx2048m</value>
-                <value>-Djava.awt.headless=true</value>
-                <value>-Djdk.attach.allowAttachSelf=true</value>
                 <value>-XX:+EnableDynamicAgentLoading</value>
                 <value>--add-opens=java.base/java.util=ALL-UNNAMED</value>
                 <value>--add-opens=java.base/java.lang=ALL-UNNAMED</value>
               </jvmArgs>
             </configuration>
+            <executions>
+              <execution>
+                <id>mutation-coverage</id>
+                <goals>
+                  <goal>mutationCoverage</goal>
+                </goals>
+              </execution>
+            </executions>
           </plugin>
         </plugins>
       </build>
