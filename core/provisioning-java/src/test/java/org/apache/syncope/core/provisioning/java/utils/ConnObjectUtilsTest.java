@@ -899,4 +899,39 @@ class ConnObjectUtilsTest {
         verify(spyUpdated).setUsername("OriginalName");
     }
 
+    @Test
+    void T33_getAnyCR_Ancestor_Null_Policy_Filtered() {
+        ConnectorObject connObj = buildConnectorObject("userAncNull", null, false);
+        Provision provision = buildProvision(AnyTypeKind.USER);
+        InboundTask<?> task = mockInboundTask();
+
+        Realm realm = mock(Realm.class);
+        when(realm.getFullPath()).thenReturn("/test");
+        doReturn(Optional.of(realm)).when(realmSearchDAO).findByFullPath(any());
+
+        Realm ancValid = mock(Realm.class);
+        PasswordPolicy policy = mock(PasswordPolicy.class);
+        when(ancValid.getPasswordPolicy()).thenReturn(policy);
+
+        Realm ancNull = mock(Realm.class);
+        when(ancNull.getPasswordPolicy()).thenReturn(null);
+
+        when(realmSearchDAO.findAncestors(realm)).thenReturn(List.of(ancValid, ancNull));
+
+        when(userUtils.newAnyTO()).thenAnswer(inv -> {
+            UserTO u = new UserTO();
+            u.setRealm("/test");
+            return u;
+        });
+
+        connObjectUtils.getAnyCR(connObj, task, AnyTypeKind.USER, provision, true);
+
+        ArgumentCaptor<List<PasswordPolicy>> captor = ArgumentCaptor.forClass(List.class);
+        verify(passwordGenerator).generate(captor.capture());
+        List<PasswordPolicy> policies = captor.getValue();
+
+        assertEquals(1, policies.size(), "L'antenato con policy null non è stato filtrato via");
+        assertFalse(policies.contains(null), "La lista delle policy non deve contenere null");
+    }
+
 }
