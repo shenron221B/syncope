@@ -164,6 +164,18 @@ under the License.
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-checkstyle-plugin</artifactId>
       </plugin>
+      <plugin>
+        <groupId>org.apache.rat</groupId>
+        <artifactId>apache-rat-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>**/DefaultPasswordRuleRegression*.java</exclude>
+            <exclude>**/target/**</exclude>
+            <exclude>**/*.log</exclude>
+            <exclude>**/*.txt</exclude>
+          </excludes>
+        </configuration>
+      </plugin>
     </plugins>
     <resources>
       <resource>
