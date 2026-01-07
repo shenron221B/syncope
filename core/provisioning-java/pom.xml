@@ -147,6 +147,18 @@ under the License.
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>randoop</groupId>
+      <artifactId>randoop</artifactId>
+      <version>4.3.4</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/lib/randoop-all-4.3.4.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.vintage</groupId>
+      <artifactId>junit-vintage-engine</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -175,6 +187,19 @@ under the License.
             <syncope.connid.location>file:${bundles.directory}/</syncope.connid.location>
             <TESTCONTAINERS_REUSE_ENABLE>true</TESTCONTAINERS_REUSE_ENABLE>
           </systemPropertyVariables>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.rat</groupId>
+        <artifactId>apache-rat-plugin</artifactId>
+        <configuration>
+          <excludes>
+            <exclude>**/ConnObjectUtilsRegression*.java</exclude>
+            <exclude>**/target/**</exclude>
+            <exclude>**/*.log</exclude>
+            <exclude>**/*.txt</exclude>
+          </excludes>
         </configuration>
       </plugin>
 
