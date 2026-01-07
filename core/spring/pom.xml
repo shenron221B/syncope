@@ -144,6 +144,18 @@ under the License.
       <artifactId>junit-jupiter</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>randoop</groupId>
+      <artifactId>randoop</artifactId>
+      <version>4.3.4</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/lib/randoop-all-4.3.4.jar</systemPath>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.vintage</groupId>
+      <artifactId>junit-vintage-engine</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
